@@ -1,5 +1,9 @@
 package com.nuvio.app.features.catalog
 
+import com.nuvio.app.features.calendar.CalendarDay
+import com.nuvio.app.features.calendar.CalendarRepository
+import com.nuvio.app.features.library.LibrarySortContext
+import com.nuvio.app.features.library.LibraryHiddenRepository
 import com.nuvio.app.features.library.LibraryUiState
 import com.nuvio.app.features.library.LibraryProviderOrders
 import com.nuvio.app.features.library.LibrarySortOption
@@ -38,7 +42,9 @@ private suspend fun LibraryUiState.libraryCatalogState(
     target: CatalogTarget.Library,
     orders: LibraryProviderOrders,
 ): CatalogUiState {
+    // Hidden titles stay out of every regular list, including a list's "View all" page.
     val items = sections.firstOrNull { it.type == target.sectionType }?.items.orEmpty()
+        .filterNot { LibraryHiddenRepository.isHidden(it.type, it.id) }
     return CatalogUiState(
         items = sortLibraryItems(
             items = items,
@@ -46,6 +52,10 @@ private suspend fun LibraryUiState.libraryCatalogState(
             sourceMode = sourceMode,
             listKey = target.sectionType,
             providerOrder = orders.ranks[target.sectionType],
+            context = LibrarySortContext(
+                titleInfo = CalendarRepository.libraryTitleInfo.value,
+                todayEpochDay = CalendarDay.today().epochDay,
+            ),
         ).map { it.toMetaPreview() }.let(::dedupeCatalogItems),
         isLoading = isLoading,
         errorMessage = if (orders.failed) getString(Res.string.library_error_sort_failed) else errorMessage,

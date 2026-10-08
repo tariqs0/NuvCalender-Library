@@ -251,7 +251,7 @@ internal fun CalendarFiltersDialog(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FacetSection(
+internal fun FacetSection(
     title: String,
     options: List<Pair<String, Int>>,
     selected: Set<String>,
@@ -274,7 +274,7 @@ private fun FacetSection(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterSection(title: String, content: @Composable () -> Unit) {
+internal fun FilterSection(title: String, content: @Composable () -> Unit) {
     val tokens = MaterialTheme.nuvio
     Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8)) {
         Text(
@@ -294,7 +294,7 @@ private fun FilterSection(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val tokens = MaterialTheme.nuvio
     Surface(
         onClick = onClick,
@@ -313,4 +313,4 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-private fun Set<String>.toggle(value: String): Set<String> = if (value in this) this - value else this + value
+internal fun Set<String>.toggle(value: String): Set<String> = if (value in this) this - value else this + value

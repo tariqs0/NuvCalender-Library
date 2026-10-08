@@ -127,6 +127,7 @@ open class MainActivity : AppCompatActivity() {
         SimklSyncStorage.initialize(applicationContext)
         LibraryDisplaySettingsStorage.initialize(applicationContext)
         com.nuvio.app.features.calendar.CalendarSettingsStorage.initialize(applicationContext)
+        com.nuvio.app.features.library.LibraryHiddenStorage.initialize(applicationContext)
         ContinueWatchingPreferencesStorage.initialize(applicationContext)
         ResumePromptStorage.initialize(applicationContext)
         ContinueWatchingEnrichmentStorage.initialize(applicationContext)

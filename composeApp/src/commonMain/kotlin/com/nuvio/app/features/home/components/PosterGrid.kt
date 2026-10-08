@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +52,8 @@ internal fun PosterGridRow(
     fullyWatchedSeriesKeys: Set<String> = emptySet(),
     onPosterClick: ((MetaPreview) -> Unit)? = null,
     onPosterLongClick: ((MetaPreview) -> Unit)? = null,
+    /** Extra content drawn over each poster image (e.g. a remove button or progress bar). */
+    posterOverlay: (@Composable BoxScope.(MetaPreview) -> Unit)? = null,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
 
@@ -72,6 +75,7 @@ internal fun PosterGridRow(
                 ),
                 onClick = onPosterClick?.let { { it(item) } },
                 onLongClick = onPosterLongClick?.let { { it(item) } },
+                posterOverlay = posterOverlay?.let { overlay -> { overlay(item) } },
             )
         }
         repeat(columns - items.size) {
@@ -111,6 +115,7 @@ private fun PosterGridTile(
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    posterOverlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     HomePosterHoverPreview(
         item = item,
@@ -176,6 +181,7 @@ private fun PosterGridTile(
                     }
                 }
                 NuvioPosterWatchedOverlay(isWatched = isWatched)
+                posterOverlay?.invoke(this)
             }
             if (!hideLabels) {
                 Text(

@@ -66,6 +66,7 @@ internal object LocalAccountDataCleaner {
         LibraryRepository.clearLocalState()
         LibraryDisplaySettingsRepository.clearLocalState()
         com.nuvio.app.features.calendar.CalendarSettingsRepository.clearLocalState()
+        com.nuvio.app.features.library.LibraryHiddenRepository.clearLocalState()
         ContinueWatchingPreferencesRepository.clearLocalState()
         EpisodeReleaseNotificationsRepository.clearLocalState()
         CollectionMobileSettingsRepository.clearLocalState()

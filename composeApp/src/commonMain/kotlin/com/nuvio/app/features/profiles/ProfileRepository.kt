@@ -177,6 +177,7 @@ object ProfileRepository {
         LibraryRepository.onProfileChanged(profileIndex)
         LibraryDisplaySettingsRepository.onProfileChanged()
         com.nuvio.app.features.calendar.CalendarSettingsRepository.onProfileChanged()
+        com.nuvio.app.features.library.LibraryHiddenRepository.onProfileChanged()
         WatchProgressRepository.onProfileChanged(profileIndex)
         AddonRepository.onProfileChanged(profileIndex)
         if (com.nuvio.app.core.build.AppFeaturePolicy.pluginsEnabled) {
@@ -478,6 +479,28 @@ object ProfileRepository {
         ProfilePinCacheStorage.savePayload(profileIndex, json.encodeToString(payload))
     }
 
+    /**
+     * Whether [pin] is this profile's lock PIN, checked against the locally cached hash only (no
+     * server call, so it never counts as a failed unlock). False when the profile has no PIN or
+     * no cached hash on this device.
+     */
+    /** Whether this device can compare a PIN with the profile's lock PIN without a server call. */
+    internal fun profilePinState(profileIndex: Int): ProfilePinState {
+        val profile = _state.value.profiles.find { it.profileIndex == profileIndex }
+        if (profile?.pinEnabled != true) return ProfilePinState.NotSet
+        val payload = ProfilePinCacheStorage.loadPayload(profileIndex).orEmpty().trim()
+        return if (payload.isEmpty()) ProfilePinState.NotCached else ProfilePinState.Cached
+    }
+
+    internal fun matchesCachedProfilePin(profileIndex: Int, pin: String): Boolean {
+        val profile = _state.value.profiles.find { it.profileIndex == profileIndex }
+        if (profile?.pinEnabled != true) return false
+        val payload = ProfilePinCacheStorage.loadPayload(profileIndex).orEmpty().trim()
+        if (payload.isEmpty()) return false
+        val cached = runCatching { json.decodeFromString<CachedProfilePinPayload>(payload) }.getOrNull() ?: return false
+        return hashProfilePin(profileIndex = profileIndex, salt = cached.salt, pin = pin) == cached.digest
+    }
+
     private fun verifyPinLocally(profileIndex: Int, pin: String): PinVerifyResult {
         val profile = _state.value.profiles.find { it.profileIndex == profileIndex }
         if (profile?.pinEnabled != true) {
@@ -571,3 +594,11 @@ data class ProfileLockState(
     @kotlinx.serialization.SerialName("pin_enabled") val pinEnabled: Boolean = false,
     @kotlinx.serialization.SerialName("pin_locked_until") val pinLockedUntil: String? = null,
 )
+
+internal enum class ProfilePinState {
+    NotSet,
+    Cached,
+
+    /** The profile has a PIN but this device has no hash of it yet (verify once to cache it). */
+    NotCached,
+}

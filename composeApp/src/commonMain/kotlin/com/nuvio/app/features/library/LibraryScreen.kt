@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -107,6 +108,9 @@ fun LibraryScreen(
     onConnectCloudClick: (() -> Unit)? = null,
     onDownloadsClick: (() -> Unit)? = null,
     disintegrationRequest: DisintegrationRequest<String>? = null,
+    /** One-click removal from the poster's "×"; a null list removes the title from all lists. */
+    onRemove: ((LibraryItem, LibrarySection?) -> Unit)? = null,
+    onHiddenPosterLongClick: ((com.nuvio.app.features.home.MetaPreview) -> Unit)? = null,
 ) {
     val uiState by remember {
         LibraryRepository.ensureLoaded()
@@ -141,6 +145,17 @@ fun LibraryScreen(
     var selectedCloudItemKey by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedLibrarySectionKey by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedLibraryType by rememberSaveable { mutableStateOf<String?>(null) }
+    var showLibraryFilters by remember { mutableStateOf(false) }
+    var hiddenDialog by remember { mutableStateOf<HiddenDialog?>(null) }
+    val (organized, hiddenState) = rememberLibraryOrganizedContent(
+        sections = uiState.sections,
+        selectedType = selectedLibraryType,
+        refinement = displaySettings.refinement,
+        sortOption = effectiveLibrarySortOption(displaySettings.sortOption, uiState.sourceMode),
+        sourceMode = uiState.sourceMode,
+        fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+    )
+    val selectedSmartList = smartListForKey(selectedLibrarySectionKey)
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     ScreenActivityEffect(listState) { screenActive ->
@@ -154,40 +169,64 @@ fun LibraryScreen(
     val orderListKeys = if (sourceMode != LibraryViewMode.Saved) emptyList() else {
         if (displaySettings.layoutMode == LibraryLayoutMode.HORIZONTAL) uiState.sections.map { it.type }
         else listOfNotNull(uiState.sections.firstOrNull { it.type == selectedLibrarySectionKey }?.type
-            ?: uiState.sections.firstOrNull()?.type)
+            ?: uiState.sections.firstOrNull()?.type?.takeIf { selectedSmartList == null })
     }
     val providerOrders = rememberLibraryProviderOrders(uiState.sourceMode, orderListKeys, effectiveSortOption)
     val visibleSortOption = if (providerOrders.failed) LibrarySortOption.DEFAULT else effectiveSortOption
-    val sortedSections = remember(uiState.sections, displaySettings, uiState.sourceMode, sourceMode, providerOrders) {
+    val smartTitles = LibrarySmartList.entries.associateWith { it.title() }
+    val sortedSections = remember(organized, displaySettings, uiState.sourceMode, sourceMode, providerOrders, smartTitles) {
         if (sourceMode == LibraryViewMode.Saved && displaySettings.layoutMode == LibraryLayoutMode.HORIZONTAL) {
-            sortLibrarySections(
-                sections = uiState.sections,
+            val smartShelves = LibrarySmartList.entries.mapNotNull { list ->
+                organized.smartLists[list].orEmpty().takeIf { it.isNotEmpty() }?.let { items ->
+                    LibrarySection(type = list.sectionKey(), displayTitle = smartTitles.getValue(list), items = items)
+                }
+            }
+            smartShelves + sortLibrarySections(
+                sections = organized.visibleSections.filter { it.items.isNotEmpty() },
                 selected = visibleSortOption,
                 sourceMode = uiState.sourceMode,
                 providerOrders = providerOrders.ranks,
+                context = organized.sortContext,
             )
         } else {
             emptyList()
         }
     }
     val verticalProjection = remember(
-        uiState.sections,
+        organized,
         uiState.sourceMode,
         selectedLibrarySectionKey,
-        selectedLibraryType,
         displaySettings,
         sourceMode,
         providerOrders,
     ) {
         if (sourceMode == LibraryViewMode.Saved && displaySettings.layoutMode == LibraryLayoutMode.VERTICAL) {
-            buildLibraryVerticalProjection(
-                sections = uiState.sections,
-                sourceMode = uiState.sourceMode,
-                selectedSectionKey = selectedLibrarySectionKey,
-                selectedType = selectedLibraryType,
-                sortOption = visibleSortOption,
-                providerOrders = providerOrders.ranks,
-            )
+            if (selectedSmartList != null) {
+                val items = organized.smartLists[selectedSmartList].orEmpty()
+                LibraryVerticalProjection(
+                    availableSections = organized.visibleSections,
+                    selectedSectionKey = selectedLibrarySectionKey,
+                    availableTypes = organized.availableTypes,
+                    selectedType = null,
+                    entries = items.map { item ->
+                        LibraryVerticalEntry(
+                            item = item,
+                            section = organized.sourceSectionFor(item)
+                                ?: LibrarySection(selectedSmartList.sectionKey(), "", emptyList()),
+                        )
+                    },
+                )
+            } else {
+                buildLibraryVerticalProjection(
+                    sections = organized.visibleSections,
+                    sourceMode = uiState.sourceMode,
+                    selectedSectionKey = selectedLibrarySectionKey,
+                    selectedType = null,
+                    sortOption = visibleSortOption,
+                    providerOrders = providerOrders.ranks,
+                    context = organized.sortContext,
+                )
+            }
         } else {
             LibraryVerticalProjection(
                 availableSections = emptyList(),
@@ -230,6 +269,16 @@ fun LibraryScreen(
             NetworkCondition.Unknown,
             NetworkCondition.Checking,
             -> Unit
+        }
+    }
+
+    // The Hidden list locks as soon as it is left (another tab, another source, or another screen).
+    HiddenListAutoLock(open = sourceMode == LibraryViewMode.Hidden) {
+        sourceModeName = LibraryViewMode.Saved.name
+    }
+    LaunchedEffect(sourceMode, hiddenState.unlocked) {
+        if (sourceMode == LibraryViewMode.Hidden && !hiddenState.unlocked) {
+            sourceModeName = LibraryViewMode.Saved.name
         }
     }
 
@@ -347,7 +396,16 @@ fun LibraryScreen(
                         LibrarySourceSwitch(
                             selectedMode = sourceMode,
                             onModeSelected = { mode ->
-                                sourceModeName = mode.name
+                                when {
+                                    mode != LibraryViewMode.Hidden -> {
+                                        if (sourceMode == LibraryViewMode.Hidden) LibraryHiddenRepository.lock()
+                                        sourceModeName = mode.name
+                                    }
+                                    sourceMode == LibraryViewMode.Hidden -> Unit
+                                    // Every visit asks for the PIN; the first one sets it up.
+                                    hiddenState.pinEnabled -> hiddenDialog = HiddenDialog.Unlock
+                                    else -> hiddenDialog = HiddenDialog.Setup
+                                }
                             },
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
@@ -356,7 +414,41 @@ fun LibraryScreen(
                 }
             }
 
-            if (sourceMode == LibraryViewMode.Cloud) {
+            if (sourceMode == LibraryViewMode.Hidden) {
+                // Hidden titles are drawn only while the list is unlocked, never in the moment
+                // between a lock and the switch back to Saved.
+                if (showsHiddenTitles(sourceMode, hiddenState)) {
+                    item(key = "library-hidden-controls") {
+                        LibraryHiddenControls(
+                            onLock = {
+                                LibraryHiddenRepository.lock()
+                                sourceModeName = LibraryViewMode.Saved.name
+                            },
+                            onChangePin = { hiddenDialog = HiddenDialog.Setup },
+                            onTurnOff = { hiddenDialog = HiddenDialog.TurnOff },
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                    }
+                    if (hiddenState.items.isEmpty()) {
+                        item(key = "library-hidden-empty") {
+                            HomeEmptyStateCard(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                title = stringResource(Res.string.library_hidden_empty_title),
+                                message = stringResource(Res.string.library_hidden_empty_message),
+                            )
+                        }
+                    } else {
+                        libraryHiddenGrid(
+                            items = hiddenState.items,
+                            columns = gridColumns,
+                            watchedKeys = watchedUiState.watchedKeys,
+                            fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
+                            onPosterClick = onPosterClick?.let { click -> { preview -> click(preview.toLibraryItem(0L)) } },
+                            onPosterLongClick = onHiddenPosterLongClick,
+                        )
+                    }
+                }
+            } else if (sourceMode == LibraryViewMode.Cloud) {
                 cloudLibraryContent(
                     uiState = cloudUiState,
                     selectedProviderId = selectedProviderId,
@@ -456,13 +548,29 @@ fun LibraryScreen(
                                 layoutMode = displaySettings.layoutMode,
                                 sourceMode = uiState.sourceMode,
                                 sortOption = effectiveSortOption,
-                                verticalProjection = verticalProjection,
-                                onSectionSelected = { sectionKey ->
-                                    selectedLibrarySectionKey = sectionKey
-                                    selectedLibraryType = null
+                                listOptions = buildList {
+                                    if (!uiState.sourceMode.isRemoteTrackingSource) {
+                                        add(NuvioDropdownOption(key = "", label = stringResource(Res.string.library_list_all)))
+                                    }
+                                    LibrarySmartList.entries.forEach { list ->
+                                        add(NuvioDropdownOption(key = list.sectionKey(), label = smartTitles.getValue(list)))
+                                    }
+                                    if (uiState.sourceMode.isRemoteTrackingSource) {
+                                        organized.visibleSections.forEach { section ->
+                                            add(NuvioDropdownOption(key = section.type, label = section.displayTitle))
+                                        }
+                                    }
                                 },
+                                selectedListKey = selectedLibrarySectionKey
+                                    ?: verticalProjection.selectedSectionKey
+                                    ?: "",
+                                onListSelected = { key -> selectedLibrarySectionKey = key.ifBlank { null } },
+                                availableTypes = organized.availableTypes,
+                                selectedType = selectedLibraryType?.takeIf { it in organized.availableTypes },
                                 onTypeSelected = { type -> selectedLibraryType = type },
                                 onSortSelected = LibraryDisplaySettingsRepository::setSortOption,
+                                activeFilters = displaySettings.refinement.activeCount,
+                                onFiltersClick = { showLibraryFilters = true },
                                 modifier = libraryContentTransitionModifier()
                                     .padding(horizontal = 16.dp),
                             )
@@ -477,6 +585,12 @@ fun LibraryScreen(
                                 onSectionViewAllClick = onSectionViewAllClick,
                                 onPosterLongClick = onPosterLongClick,
                                 onDisintegrated = disintegration::onExited,
+                                organized = organized,
+                                onRemove = onRemove,
+                                onSmartListViewAll = { list ->
+                                    selectedLibrarySectionKey = list.sectionKey()
+                                    LibraryDisplaySettingsRepository.setLayoutMode(LibraryLayoutMode.VERTICAL)
+                                },
                             )
                             LibraryLayoutMode.VERTICAL -> libraryVerticalContent(
                                 projection = verticalProjection,
@@ -485,12 +599,72 @@ fun LibraryScreen(
                                 fullyWatchedSeriesKeys = fullyWatchedSeriesKeys,
                                 onPosterClick = onPosterClick,
                                 onPosterLongClick = onPosterLongClick,
+                                progressFor = organized::progressFor,
+                                showProgress = selectedSmartList == LibrarySmartList.ContinueWatching,
+                                onRemove = onRemove,
+                                removeFromSection = selectedSmartList == null && uiState.sourceMode.isRemoteTrackingSource,
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    if (showLibraryFilters) {
+        val sortOptions = availableLibrarySortOptions(uiState.sourceMode)
+        LibraryFiltersDialog(
+            sortOption = effectiveSortOption,
+            sortOptions = sortOptions,
+            refinement = displaySettings.refinement,
+            options = organized.filterOptions,
+            sortLabel = { option -> librarySortLabel(option) },
+            onSortChange = LibraryDisplaySettingsRepository::setSortOption,
+            onRefinementChange = LibraryDisplaySettingsRepository::setRefinement,
+            onDismiss = { showLibraryFilters = false },
+        )
+    }
+
+    when (hiddenDialog) {
+        HiddenDialog.Setup -> HiddenPinSetupDialog(
+            onDone = {
+                // A new PIN still has to be entered to open the list.
+                hiddenDialog = if (sourceMode == LibraryViewMode.Hidden) null else HiddenDialog.Unlock
+            },
+            onDismiss = { hiddenDialog = null },
+        )
+        HiddenDialog.Unlock -> HiddenUnlockDialog(
+            onUnlocked = {
+                hiddenDialog = null
+                sourceModeName = LibraryViewMode.Hidden.name
+            },
+            onDismiss = { hiddenDialog = null },
+        )
+        HiddenDialog.TurnOff -> HiddenTurnOffDialog(
+            onDone = {
+                hiddenDialog = null
+                sourceModeName = LibraryViewMode.Saved.name
+            },
+            onDismiss = { hiddenDialog = null },
+        )
+        null -> Unit
+    }
+}
+
+@Composable
+private fun LibraryHiddenControls(
+    onLock: () -> Unit,
+    onChangePin: () -> Unit,
+    onTurnOff: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        LibraryChip(label = stringResource(Res.string.library_hidden_lock), selected = true, onClick = onLock)
+        LibraryChip(label = stringResource(Res.string.library_hidden_change_pin), selected = false, onClick = onChangePin)
+        LibraryChip(label = stringResource(Res.string.library_hidden_turn_off), selected = false, onClick = onTurnOff)
     }
 }
 
@@ -712,6 +886,11 @@ private fun LibrarySourceSwitch(
             label = stringResource(Res.string.library_source_cloud),
             selected = selectedMode == LibraryViewMode.Cloud,
             onClick = { onModeSelected(LibraryViewMode.Cloud) },
+        )
+        LibraryChip(
+            label = "\uD83D\uDD12 " + stringResource(Res.string.library_source_hidden),
+            selected = selectedMode == LibraryViewMode.Hidden,
+            onClick = { onModeSelected(LibraryViewMode.Hidden) },
         )
     }
 }
@@ -1173,10 +1352,17 @@ private fun CloudLibrarySkeletonRow(
     }
 }
 
-private enum class LibraryViewMode {
+internal enum class LibraryViewMode {
     Saved,
     Cloud,
+    Hidden,
 }
+
+internal enum class HiddenDialog { Setup, Unlock, TurnOff }
+
+/** The Hidden list's titles are visible only in Hidden mode and only after its PIN was entered. */
+internal fun showsHiddenTitles(mode: LibraryViewMode, hidden: LibraryHiddenUiState): Boolean =
+    mode == LibraryViewMode.Hidden && hidden.unlocked
 
 private fun LazyListScope.librarySections(
     displaySections: List<LibraryDisplaySection>,
@@ -1187,6 +1373,9 @@ private fun LazyListScope.librarySections(
     onSectionViewAllClick: ((LibrarySection, LibrarySortOption) -> Unit)?,
     onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)?,
     onDisintegrated: (String) -> Unit,
+    organized: LibraryOrganizedContent,
+    onRemove: ((LibraryItem, LibrarySection?) -> Unit)?,
+    onSmartListViewAll: (LibrarySmartList) -> Unit,
 ) {
     items(
         items = displaySections,
@@ -1198,16 +1387,26 @@ private fun LazyListScope.librarySections(
             modifier = libraryContentTransitionModifier(),
             headerHorizontalPadding = 16.dp,
             rowContentPadding = PaddingValues(horizontal = 16.dp),
-            onViewAllClick = section.source
-                ?.takeIf { it.items.size > LIBRARY_SECTION_PREVIEW_LIMIT }
-                ?.let { source -> onSectionViewAllClick?.let { { it(source, sortOption) } } },
+            onViewAllClick = smartListForKey(section.type)
+                ?.takeIf { (section.source?.items?.size ?: 0) > LIBRARY_SECTION_PREVIEW_LIMIT }
+                ?.let { list -> { onSmartListViewAll(list) } }
+                ?: section.source
+                    ?.takeIf { smartListForKey(it.type) == null && it.items.size > LIBRARY_SECTION_PREVIEW_LIMIT }
+                    ?.let { source -> onSectionViewAllClick?.let { { it(source, sortOption) } } },
             viewAllPillSize = NuvioViewAllPillSize.Compact,
             key = { entry -> entry.globalKey },
             animatePlacement = true,
         ) { entry ->
             val item = entry.item
-            val posterItem = item.toMetaPreview()
-            val entrySource = entry.section
+            val smartList = smartListForKey(section.type)
+            val progress = organized.progressFor(item)
+            val posterItem = if (smartList == LibrarySmartList.ContinueWatching) {
+                item.previewWithProgress(progress)
+            } else {
+                item.toMetaPreview()
+            }
+            // Automatic lists act on the title's real provider list.
+            val entrySource = if (smartList != null) organized.sourceSectionFor(item) else entry.section
             DisintegratingContainer(
                 disintegrating = entry.exiting,
                 onDisintegrated = { onDisintegrated(entry.globalKey) },
@@ -1224,6 +1423,17 @@ private fun LazyListScope.librarySections(
                         null
                     } else {
                         onPosterLongClick?.let { { it(item, entrySource) } }
+                    },
+                    posterOverlay = {
+                        LibraryPosterOverlay(
+                            onRemove = if (entry.exiting || onRemove == null) {
+                                null
+                            } else {
+                                { onRemove(item, if (smartList != null) null else entrySource) }
+                            },
+                            progressFraction = progress?.progressFraction
+                                ?.takeIf { smartList == LibrarySmartList.ContinueWatching },
+                        )
                     },
                 )
             }

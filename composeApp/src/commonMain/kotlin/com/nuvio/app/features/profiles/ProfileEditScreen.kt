@@ -1,5 +1,9 @@
 package com.nuvio.app.features.profiles
 
+import com.nuvio.app.features.library.LibraryHiddenRepository
+import com.nuvio.app.features.library.HiddenTurnOffDialog
+import com.nuvio.app.features.library.HiddenPinSetupDialog
+import com.nuvio.app.features.library.HiddenDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -84,6 +88,15 @@ fun ProfileEditScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showPinSetup by remember { mutableStateOf(false) }
     var showPinClear by remember { mutableStateOf(false) }
+    var hiddenDialog by remember { mutableStateOf<HiddenDialog?>(null) }
+    val hiddenLibrary by remember {
+        LibraryHiddenRepository.ensureLoaded()
+        LibraryHiddenRepository.uiState
+    }.collectAsStateWithLifecycle()
+    // Re-read after dialogs so other profiles reflect their own Hidden list state.
+    val hiddenPinEnabled = remember(currentProfile?.profileIndex, hiddenDialog, hiddenLibrary) {
+        currentProfile?.let { LibraryHiddenRepository.isPinEnabled(it.profileIndex) } == true
+    }
     val memberAccess by remember {
         MemberAccessRepository.ensureStarted()
         MemberAccessRepository.access
@@ -268,6 +281,42 @@ fun ProfileEditScreen(
                     }
                 }
             }
+
+            // The Library's Hidden list has its own PIN, separate from the profile lock.
+            item {
+                NuvioSurfaceCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text(
+                            text = stringResource(Res.string.profile_hidden_list),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = stringResource(
+                                if (hiddenPinEnabled) {
+                                    Res.string.profile_hidden_list_enabled
+                                } else {
+                                    Res.string.profile_hidden_list_disabled
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        NuvioPrimaryButton(
+                            text = stringResource(
+                                if (hiddenPinEnabled) Res.string.library_hidden_change_pin else Res.string.profile_hidden_list_set_up,
+                            ),
+                            onClick = { hiddenDialog = HiddenDialog.Setup },
+                        )
+                        if (hiddenPinEnabled) {
+                            NuvioPrimaryButton(
+                                text = stringResource(Res.string.library_hidden_turn_off),
+                                onClick = { hiddenDialog = HiddenDialog.TurnOff },
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         item {
@@ -365,6 +414,22 @@ fun ProfileEditScreen(
             },
             onDismiss = { showPinSetup = false },
         )
+    }
+
+    if (currentProfile != null) {
+        when (hiddenDialog) {
+            HiddenDialog.Setup -> HiddenPinSetupDialog(
+                profileIndex = currentProfile.profileIndex,
+                onDone = { hiddenDialog = null },
+                onDismiss = { hiddenDialog = null },
+            )
+            HiddenDialog.TurnOff -> HiddenTurnOffDialog(
+                profileIndex = currentProfile.profileIndex,
+                onDone = { hiddenDialog = null },
+                onDismiss = { hiddenDialog = null },
+            )
+            else -> Unit
+        }
     }
 
     if (showPinClear && currentProfile != null) {

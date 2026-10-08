@@ -9,6 +9,7 @@ internal actual object PlatformLocalAccountDataCleaner {
         "nuvio_library",
         "nuvio_library_display_settings",
         "nuvio_calendar_settings",
+        "nuvio_library_hidden",
         "nuvio_home_catalog_settings",
         "nuvio_player_settings",
         "torrent_settings",
