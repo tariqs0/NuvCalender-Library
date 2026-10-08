@@ -1,5 +1,6 @@
 package com.nuvio.app.features.library
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.profiles.ProfilePinCrypto
@@ -105,6 +106,7 @@ internal fun hashHiddenPin(profileIndex: Int, salt: String, pin: String): String
  * again as soon as the list is left.
  */
 internal object LibraryHiddenRepository {
+    private val log = Logger.withTag("LibraryHidden")
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -183,13 +185,20 @@ internal object LibraryHiddenRepository {
     fun unlock(pin: String): Boolean {
         ensureLoaded()
         val profileIndex = loadedProfileIndex ?: return false
-        if (!stored.matches(profileIndex, pin)) return false
+        if (!stored.matches(profileIndex, pin)) {
+            log.i { "Hidden list unlock rejected (profile $profileIndex)" }
+            return false
+        }
         _uiState.value = _uiState.value.copy(unlocked = true)
+        log.i { "Hidden list unlocked with its PIN (profile $profileIndex)" }
         return true
     }
 
     fun lock() {
-        if (_uiState.value.unlocked) _uiState.value = _uiState.value.copy(unlocked = false)
+        if (_uiState.value.unlocked) {
+            _uiState.value = _uiState.value.copy(unlocked = false)
+            log.i { "Hidden list locked" }
+        }
     }
 
     fun isHidden(type: String, id: String): Boolean {

@@ -416,11 +416,7 @@ internal object CalendarRepository {
             popularity = tmdb.popularity,
             rating = tmdb.rating ?: (preview.imdbRating ?: meta?.imdbRating)?.toDoubleOrNull(),
             startYear = leadingYear(item.releaseInfo ?: meta?.releaseInfo),
-            episodes = meta?.videos.orEmpty().mapNotNull { video ->
-                val season = video.season ?: return@mapNotNull null
-                val episode = video.episode ?: return@mapNotNull null
-                LibraryEpisodeRef(season, episode, CalendarDay.parse(video.released)?.epochDay)
-            },
+            episodes = libraryEpisodesOf(meta),
             releaseDays = entries.map { it.day.epochDay }.distinct().sorted(),
         )
         return entries to info

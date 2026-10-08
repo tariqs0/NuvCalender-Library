@@ -105,7 +105,10 @@ internal fun classifyLibraryItem(
     }
 
     // The last thing watched: the newest of a watched episode and a progress entry.
-    val lastWatchedEpisode = watchedItems.filter { it.season != null && it.episode != null }.maxByOrNull { it.markedAtEpochMs }
+    // Marking a whole season gives every episode the same time; the latest episode wins a tie.
+    val lastWatchedEpisode = watchedItems
+        .filter { it.season != null && it.episode != null }
+        .maxWithOrNull(compareBy<WatchedItem>({ it.markedAtEpochMs }, { it.season }, { it.episode }))
     val progressIsNewer = latestProgress != null &&
         latestProgress.lastUpdatedEpochMs >= (lastWatchedEpisode?.markedAtEpochMs ?: Long.MIN_VALUE)
     val (lastSeason, lastEpisode) = when {
