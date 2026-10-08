@@ -10,11 +10,13 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.i18n.localizedMediaTypeLabel
 import com.nuvio.app.core.ui.NuvioDropdownChip
 import com.nuvio.app.core.ui.NuvioDropdownOption
+import com.nuvio.app.features.calendar.CalendarFiltersButton
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.components.PosterGridRow
 import com.nuvio.app.features.home.components.PosterGridSkeletonRow
@@ -27,7 +29,12 @@ import nuvio.composeapp.generated.resources.library_sort_added_asc
 import nuvio.composeapp.generated.resources.library_sort_added_desc
 import nuvio.composeapp.generated.resources.library_sort_title_asc
 import nuvio.composeapp.generated.resources.library_sort_title_desc
+import nuvio.composeapp.generated.resources.library_sort_new
 import nuvio.composeapp.generated.resources.library_sort_provider_order
+import nuvio.composeapp.generated.resources.library_sort_rating
+import nuvio.composeapp.generated.resources.library_sort_trending
+import nuvio.composeapp.generated.resources.library_sort_year_asc
+import nuvio.composeapp.generated.resources.library_sort_year_desc
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -35,10 +42,15 @@ internal fun LibrarySavedControls(
     layoutMode: LibraryLayoutMode,
     sourceMode: LibrarySourceMode,
     sortOption: LibrarySortOption,
-    verticalProjection: LibraryVerticalProjection,
-    onSectionSelected: (String) -> Unit,
+    listOptions: List<NuvioDropdownOption>,
+    selectedListKey: String?,
+    onListSelected: (String) -> Unit,
+    availableTypes: List<String>,
+    selectedType: String?,
     onTypeSelected: (String?) -> Unit,
     onSortSelected: (LibrarySortOption) -> Unit,
+    activeFilters: Int,
+    onFiltersClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sortOptions = availableLibrarySortOptions(sourceMode)
@@ -47,42 +59,33 @@ internal fun LibrarySavedControls(
     Row(
         modifier = modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (layoutMode == LibraryLayoutMode.VERTICAL && sourceMode.isRemoteTrackingSource) {
-            val selectedSection = verticalProjection.availableSections
-                .firstOrNull { section -> section.type == verticalProjection.selectedSectionKey }
+        if (layoutMode == LibraryLayoutMode.VERTICAL && listOptions.isNotEmpty()) {
+            val selected = listOptions.firstOrNull { it.key == selectedListKey } ?: listOptions.first()
             NuvioDropdownChip(
                 title = stringResource(Res.string.library_filter_list),
-                label = selectedSection?.displayTitle.orEmpty(),
-                selectedKey = verticalProjection.selectedSectionKey,
-                options = verticalProjection.availableSections.map { section ->
-                    NuvioDropdownOption(key = section.type, label = section.displayTitle)
-                },
-                enabled = verticalProjection.availableSections.size > 1,
-                onSelected = { option -> onSectionSelected(option.key) },
+                label = selected.label,
+                selectedKey = selected.key,
+                options = listOptions,
+                enabled = listOptions.size > 1,
+                onSelected = { option -> onListSelected(option.key) },
             )
         }
 
-        if (layoutMode == LibraryLayoutMode.VERTICAL) {
-            val typeOptions = buildList {
-                add(NuvioDropdownOption(key = "", label = allTypesLabel))
-                addAll(
-                    verticalProjection.availableTypes.map { type ->
-                        NuvioDropdownOption(key = type, label = localizedMediaTypeLabel(type))
-                    },
-                )
-            }
-            NuvioDropdownChip(
-                title = stringResource(Res.string.library_filter_type),
-                label = verticalProjection.selectedType
-                    ?.let(::localizedMediaTypeLabel)
-                    ?: allTypesLabel,
-                selectedKey = verticalProjection.selectedType.orEmpty(),
-                options = typeOptions,
-                enabled = typeOptions.size > 1,
-                onSelected = { option -> onTypeSelected(option.key.ifBlank { null }) },
-            )
+        // Content type (movies, series, anime and addon categories) applies to every list.
+        val typeOptions = buildList {
+            add(NuvioDropdownOption(key = "", label = allTypesLabel))
+            addAll(availableTypes.map { type -> NuvioDropdownOption(key = type, label = localizedMediaTypeLabel(type)) })
         }
+        NuvioDropdownChip(
+            title = stringResource(Res.string.library_filter_type),
+            label = selectedType?.let(::localizedMediaTypeLabel) ?: allTypesLabel,
+            selectedKey = selectedType.orEmpty(),
+            options = typeOptions,
+            enabled = typeOptions.size > 1,
+            onSelected = { option -> onTypeSelected(option.key.ifBlank { null }) },
+        )
 
         NuvioDropdownChip(
             title = stringResource(Res.string.library_filter_sort),
@@ -98,6 +101,8 @@ internal fun LibrarySavedControls(
                     ?.let(onSortSelected)
             },
         )
+
+        CalendarFiltersButton(activeCount = activeFilters, onClick = onFiltersClick)
     }
 }
 
@@ -108,6 +113,10 @@ internal fun LazyListScope.libraryVerticalContent(
     fullyWatchedSeriesKeys: Set<String>,
     onPosterClick: ((LibraryItem) -> Unit)?,
     onPosterLongClick: ((LibraryItem, LibrarySection) -> Unit)?,
+    progressFor: (LibraryItem) -> LibraryProgress? = { null },
+    showProgress: Boolean = false,
+    onRemove: ((LibraryItem, LibrarySection?) -> Unit)? = null,
+    removeFromSection: Boolean = true,
 ) {
     items(
         items = projection.entries.chunked(columns),
@@ -117,7 +126,9 @@ internal fun LazyListScope.libraryVerticalContent(
         },
     ) { rowEntries ->
         PosterGridRow(
-            items = rowEntries.map { entry -> entry.item.toMetaPreview() },
+            items = rowEntries.map { entry ->
+                if (showProgress) entry.item.previewWithProgress(progressFor(entry.item)) else entry.item.toMetaPreview()
+            },
             columns = columns,
             modifier = libraryContentTransitionModifier()
                 .padding(horizontal = 16.dp),
@@ -130,6 +141,18 @@ internal fun LazyListScope.libraryVerticalContent(
                 { preview ->
                     rowEntries.findEntry(preview)?.let { entry -> callback(entry.item, entry.section) }
                 }
+            },
+            posterOverlay = { preview ->
+                val entry = rowEntries.findEntry(preview)
+                LibraryPosterOverlay(
+                    onRemove = if (entry != null && onRemove != null) {
+                        { onRemove(entry.item, entry.section.takeIf { removeFromSection }) }
+                    } else {
+                        null
+                    },
+                    progressFraction = entry?.let { progressFor(it.item)?.progressFraction }
+                        ?.takeIf { showProgress },
+                )
             },
         )
     }
@@ -156,6 +179,9 @@ internal fun LazyItemScope.libraryContentTransitionModifier(): Modifier =
     )
 
 @Composable
+internal fun librarySortLabel(option: LibrarySortOption): String = librarySortOptionLabel(option)
+
+@Composable
 private fun librarySortOptionLabel(option: LibrarySortOption): String =
     when (option) {
         LibrarySortOption.DEFAULT -> stringResource(Res.string.library_sort_provider_order)
@@ -163,6 +189,11 @@ private fun librarySortOptionLabel(option: LibrarySortOption): String =
         LibrarySortOption.ADDED_ASC -> stringResource(Res.string.library_sort_added_asc)
         LibrarySortOption.TITLE_ASC -> stringResource(Res.string.library_sort_title_asc)
         LibrarySortOption.TITLE_DESC -> stringResource(Res.string.library_sort_title_desc)
+        LibrarySortOption.YEAR_DESC -> stringResource(Res.string.library_sort_year_desc)
+        LibrarySortOption.YEAR_ASC -> stringResource(Res.string.library_sort_year_asc)
+        LibrarySortOption.NEW -> stringResource(Res.string.library_sort_new)
+        LibrarySortOption.TRENDING -> stringResource(Res.string.library_sort_trending)
+        LibrarySortOption.RATING -> stringResource(Res.string.library_sort_rating)
     }
 
 private fun List<LibraryVerticalEntry>.findEntry(preview: MetaPreview): LibraryVerticalEntry? =

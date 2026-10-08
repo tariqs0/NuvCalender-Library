@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -243,6 +244,8 @@ fun NuvioPosterCard(
     isWatched: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    /** Extra content drawn over the poster image (e.g. a remove button or progress bar). */
+    posterOverlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
     val tokens = MaterialTheme.nuvio
@@ -359,6 +362,7 @@ fun NuvioPosterCard(
             }
 
             NuvioPosterWatchedOverlay(isWatched = isWatched)
+            posterOverlay?.invoke(this)
         }
         if (shouldShowTitleBelow) {
             Text(

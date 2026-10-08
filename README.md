@@ -14,7 +14,7 @@
 
 ## About this fork
 
-**NuvCalender-Library** is a fork of [NuvioDesktop](https://github.com/NuvioMedia/NuvioDesktop) that adds a **Calendar** page for release dates — both everything coming out and what's coming for the titles in your Library. Everything else is the upstream app.
+**NuvCalender-Library** is a fork of [NuvioDesktop](https://github.com/NuvioMedia/NuvioDesktop) that adds a **Calendar** page for release dates — both everything coming out and what's coming for the titles in your Library — and an enhanced **Library** page with smart lists, Calendar-style filters and a PIN-protected Hidden list. Everything else is the upstream app.
 
 ## Calendar
 
@@ -55,6 +55,48 @@ Settings → **Content & Discovery** → **Calendar**:
 
 ```bash
 ./gradlew :composeApp:desktopTest --tests "com.nuvio.app.features.calendar.*"
+```
+
+## Library
+
+The Library page keeps its existing layouts (grid and horizontal shelves), hover preview and poster actions, and adds:
+
+### Lists
+
+- **Continue Watching** — titles you've started. Series show the last watched episode and playback progress (e.g. *S2 E5 · 45%*) or the next episode to watch (*Next: S4 E1*), with a progress bar on the poster.
+- **Watchlist** — saved titles you haven't started.
+- **Watched** — movies you've finished and series you're caught up on.
+
+Titles move between lists automatically: a finished movie or a fully watched series moves to **Watched**, and a watched series moves back to **Continue Watching** as soon as a new episode or season airs. Pick a list from the list menu in grid view; in shelves view each list is a shelf above your regular Library sections.
+
+### Sorting and filters
+
+- **Sort:** Recently added · Oldest added · Year: Newest first · Year: Oldest first · Title A–Z / Z–A · New · Trending · Rating.
+- **Type:** All types, Movies, Series and any addon category in your Library (e.g. Anime).
+- **Filters** — the same as the Calendar, in the same order: Sort by, Streaming services, Genre, Year (by decade), Country and Language. Every list supports them, and your choices are remembered.
+
+### Remove with one click
+
+Every poster has an **×** in its top-left corner that removes the title from your Library — no need to open the details page or right-click.
+
+### Hidden list
+
+- Turn it on from the Library (**🔒 Hidden**) or from **Profile Manager → Edit Profile → Hidden list**.
+- Protected by its **own 4-digit PIN**, which must be different from the profile PIN. The PIN is asked **every time** the list is opened, and the list **locks automatically** when you leave it (another Library tab, another page, the player or another profile).
+- Move movies, series or any other addon content into it from the poster menu (**Move to Hidden**). Hidden titles disappear from every regular list, shelf and the Library calendar until you move them back (**×** inside the Hidden list).
+- **Change PIN** and **Turn off** need the current Hidden PIN. Each profile has its own Hidden list.
+
+### Sync
+
+The Library uses the app's existing addons and integrations — nothing extra to set up:
+
+- **Metadata, episodes and new releases** come from your installed addons (any addon that provides metadata — Cinemeta, anime addons and so on), plus TMDB for streaming services, popularity and rating when a TMDB key is set. While the Library is open, release data is re-read from the addons every few hours and the day rolls over at midnight, so new episodes and seasons show up without restarting.
+- **Watch progress and watched state** come from the existing watch-progress and watched sync (Nuvio sync or your connected tracking provider), so playback on any device updates the lists.
+
+### Tests
+
+```bash
+./gradlew :composeApp:desktopTest --tests "com.nuvio.app.features.library.*"
 ```
 
 ## ⚠️ Alpha Software - Slow Development - Testers Only

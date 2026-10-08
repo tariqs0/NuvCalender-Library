@@ -1,5 +1,8 @@
 package com.nuvio.app.features.library
 
+import com.nuvio.app.features.calendar.CalendarRefinement
+import com.nuvio.app.features.calendar.LibraryTitleInfo
+import com.nuvio.app.features.calendar.leadingYear
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,13 +21,36 @@ enum class LibrarySortOption {
     DEFAULT,
     ADDED_DESC,
     ADDED_ASC,
+    YEAR_DESC,
+    YEAR_ASC,
     TITLE_ASC,
     TITLE_DESC,
+
+    /** Most recent episode or release first. */
+    NEW,
+
+    /** TMDB popularity. */
+    TRENDING,
+    RATING,
+}
+
+/**
+ * Extra data the newer sorts need (release dates, popularity, rating), gathered by the Library
+ * calendar sync. Empty context makes those sorts fall back to title order.
+ */
+internal data class LibrarySortContext(
+    val titleInfo: Map<String, LibraryTitleInfo> = emptyMap(),
+    val todayEpochDay: Long = 0L,
+) {
+    fun infoFor(item: LibraryItem): LibraryTitleInfo? = titleInfo[libraryDisplayItemKey(item)]
+
+    fun yearOf(item: LibraryItem): Int? = leadingYear(item.releaseInfo) ?: infoFor(item)?.startYear
 }
 
 data class LibraryDisplaySettingsUiState(
     val layoutMode: LibraryLayoutMode = LibraryLayoutMode.HORIZONTAL,
     val sortOption: LibrarySortOption = LibrarySortOption.DEFAULT,
+    val refinement: LibraryRefinement = LibraryRefinement(),
 )
 
 object LibraryDisplaySettingsRepository {
@@ -58,6 +84,13 @@ object LibraryDisplaySettingsRepository {
         ensureLoaded()
         if (_uiState.value.sortOption == sortOption) return
         _uiState.value = _uiState.value.copy(sortOption = sortOption)
+        persist()
+    }
+
+    internal fun setRefinement(refinement: LibraryRefinement) {
+        ensureLoaded()
+        if (_uiState.value.refinement == refinement) return
+        _uiState.value = _uiState.value.copy(refinement = refinement)
         persist()
     }
 
@@ -107,6 +140,7 @@ internal fun sortLibraryItems(
     sourceMode: LibrarySourceMode,
     listKey: String? = null,
     providerOrder: Map<String, Int>? = null,
+    context: LibrarySortContext = LibrarySortContext(),
 ): List<LibraryItem> =
     when (effectiveLibrarySortOption(selected, sourceMode)) {
         LibrarySortOption.DEFAULT -> items.sortedWith(
@@ -140,6 +174,39 @@ internal fun sortLibraryItems(
             compareByDescending<LibraryItem> { libraryTitleSortKey(it) }
                 .thenBy { it.id },
         )
+        // Titles without the value sort last in both directions.
+        LibrarySortOption.YEAR_DESC -> items.sortedWith(
+            compareBy<LibraryItem> { if (context.yearOf(it) == null) 1 else 0 }
+                .thenByDescending { context.yearOf(it) ?: 0 }
+                .thenBy { libraryTitleSortKey(it) }
+                .thenBy { it.id },
+        )
+        LibrarySortOption.YEAR_ASC -> items.sortedWith(
+            compareBy<LibraryItem> { if (context.yearOf(it) == null) 1 else 0 }
+                .thenBy { context.yearOf(it) ?: 0 }
+                .thenBy { libraryTitleSortKey(it) }
+                .thenBy { it.id },
+        )
+        LibrarySortOption.NEW -> items.sortedWith(
+            compareByDescending<LibraryItem> {
+                context.infoFor(it)?.latestReleaseDay(context.todayEpochDay) ?: Long.MIN_VALUE
+            }
+                .thenByDescending { context.yearOf(it) ?: 0 }
+                .thenBy { libraryTitleSortKey(it) }
+                .thenBy { it.id },
+        )
+        LibrarySortOption.TRENDING -> items.sortedWith(
+            compareByDescending<LibraryItem> { context.infoFor(it)?.popularity ?: -1.0 }
+                .thenBy { libraryTitleSortKey(it) }
+                .thenBy { it.id },
+        )
+        LibrarySortOption.RATING -> items.sortedWith(
+            compareByDescending<LibraryItem> {
+                context.infoFor(it)?.rating ?: it.imdbRating?.toDoubleOrNull() ?: -1.0
+            }
+                .thenBy { libraryTitleSortKey(it) }
+                .thenBy { it.id },
+        )
     }
 
 internal fun sortLibrarySections(
@@ -147,9 +214,12 @@ internal fun sortLibrarySections(
     selected: LibrarySortOption,
     sourceMode: LibrarySourceMode,
     providerOrders: Map<String, Map<String, Int>> = emptyMap(),
+    context: LibrarySortContext = LibrarySortContext(),
 ): List<LibrarySection> =
     sections.map { section ->
-        section.copy(items = sortLibraryItems(section.items, selected, sourceMode, section.type, providerOrders[section.type]))
+        section.copy(
+            items = sortLibraryItems(section.items, selected, sourceMode, section.type, providerOrders[section.type], context),
+        )
     }
 
 internal fun buildLibraryVerticalProjection(
@@ -159,6 +229,7 @@ internal fun buildLibraryVerticalProjection(
     selectedType: String?,
     sortOption: LibrarySortOption,
     providerOrders: Map<String, Map<String, Int>> = emptyMap(),
+    context: LibrarySortContext = LibrarySortContext(),
 ): LibraryVerticalProjection {
     val availableSections = if (sourceMode.isRemoteTrackingSource) sections else emptyList()
     val selectedSection = if (sourceMode.isRemoteTrackingSource) {
@@ -198,6 +269,7 @@ internal fun buildLibraryVerticalProjection(
         sourceMode = sourceMode,
         listKey = selectedSection?.type,
         providerOrder = providerOrders[selectedSection?.type],
+        context = context,
     ).mapNotNull { item -> entryByKey[libraryDisplayItemKey(item)] }
 
     return LibraryVerticalProjection(
@@ -214,6 +286,11 @@ internal fun encodeLibraryDisplaySettings(state: LibraryDisplaySettingsUiState):
         StoredLibraryDisplaySettings(
             layoutMode = state.layoutMode.name,
             sortOption = state.sortOption.name,
+            genres = state.refinement.calendar.genres.toList(),
+            languages = state.refinement.calendar.languages.toList(),
+            countries = state.refinement.calendar.countries.toList(),
+            services = state.refinement.calendar.services.toList(),
+            decades = state.refinement.decades.toList(),
         ),
     )
 
@@ -232,6 +309,15 @@ internal fun decodeLibraryDisplaySettings(payload: String?): LibraryDisplaySetti
         sortOption = stored?.sortOption
             ?.let { value -> LibrarySortOption.entries.firstOrNull { it.name == value } }
             ?: LibrarySortOption.DEFAULT,
+        refinement = LibraryRefinement(
+            calendar = CalendarRefinement(
+                genres = stored?.genres.orEmpty().toSet(),
+                languages = stored?.languages.orEmpty().toSet(),
+                countries = stored?.countries.orEmpty().toSet(),
+                services = stored?.services.orEmpty().toSet(),
+            ),
+            decades = stored?.decades.orEmpty().toSet(),
+        ),
     )
 }
 
@@ -264,6 +350,11 @@ internal val LibrarySourceMode.isRemoteTrackingSource: Boolean
 private data class StoredLibraryDisplaySettings(
     @SerialName("layout_mode") val layoutMode: String = LibraryLayoutMode.HORIZONTAL.name,
     @SerialName("sort_option") val sortOption: String = LibrarySortOption.DEFAULT.name,
+    @SerialName("genres") val genres: List<String> = emptyList(),
+    @SerialName("languages") val languages: List<String> = emptyList(),
+    @SerialName("countries") val countries: List<String> = emptyList(),
+    @SerialName("services") val services: List<String> = emptyList(),
+    @SerialName("decades") val decades: List<Int> = emptyList(),
 )
 
 private fun libraryProviderOrderComparator(ranks: Map<String, Int>): Comparator<LibraryItem> =

@@ -282,7 +282,14 @@ internal object TmdbCalendarSource {
     private val details = mutableMapOf<String, TmdbShowDetails?>()
     private val seasons = mutableMapOf<String, List<TmdbEpisode>>()
     private val services = mutableMapOf<String, ServiceIndex>()
-    private val titleServices = mutableMapOf<String, Set<CalendarStreamingService>>()
+    private val titleInfos = mutableMapOf<String, TmdbTitleInfo>()
+
+    /** Per-title TMDB data used by the Library: streaming services plus popularity and rating. */
+    internal data class TmdbTitleInfo(
+        val services: Set<CalendarStreamingService> = emptySet(),
+        val popularity: Double? = null,
+        val rating: Double? = null,
+    )
 
     /** TMDB ids (TV and movie ids live in separate spaces) per streaming service. */
     internal data class ServiceIndex(
@@ -385,24 +392,36 @@ internal object TmdbCalendarSource {
         tmdbId: Int,
         isMovie: Boolean,
         region: String,
-    ): Set<CalendarStreamingService> {
+    ): Set<CalendarStreamingService> = titleInfo(apiKey, tmdbId, isMovie, region).services
+
+    suspend fun titleInfo(
+        apiKey: String,
+        tmdbId: Int,
+        isMovie: Boolean,
+        region: String,
+    ): TmdbTitleInfo {
         val key = "${if (isMovie) "movie" else "tv"}:$tmdbId|$region"
-        mutex.withLock { titleServices[key]?.let { return it } }
+        mutex.withLock { titleInfos[key]?.let { return it } }
         val response = fetch<TmdbTitleServices>(
             apiKey,
             "${if (isMovie) "movie" else "tv"}/$tmdbId",
             mapOf("append_to_response" to "watch/providers"),
-        ) ?: return emptySet()
+        ) ?: return TmdbTitleInfo()
         val networkIds = response.networks.map { it.id }.toSet()
         val providerIds = response.watchProviders?.results?.get(region)
             ?.let { it.flatrate + it.ads + it.free }
             .orEmpty()
             .map { it.providerId }
             .toSet()
-        val result = CalendarStreamingService.entries.filterTo(linkedSetOf()) { service ->
+        val services = CalendarStreamingService.entries.filterTo(linkedSetOf()) { service ->
             service.tmdbNetworkIds.any(networkIds::contains) || service.tmdbProviderIds.any(providerIds::contains)
         }
-        mutex.withLock { titleServices[key] = result }
+        val result = TmdbTitleInfo(
+            services = services,
+            popularity = response.popularity,
+            rating = response.voteAverage?.takeIf { (response.voteCount ?: 0) > 0 && it > 0.0 },
+        )
+        mutex.withLock { titleInfos[key] = result }
         return result
     }
 
@@ -715,6 +734,9 @@ internal data class TmdbShowDetails(
 private data class TmdbTitleServices(
     val networks: List<TmdbIdOnly> = emptyList(),
     @SerialName("watch/providers") val watchProviders: TmdbWatchProviders? = null,
+    val popularity: Double? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
 )
 
 @Serializable

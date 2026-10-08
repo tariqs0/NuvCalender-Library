@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.nuvio.app.core.format.formatReleaseDateForDisplay
@@ -19,6 +20,7 @@ fun HomePosterCard(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     showLandscapeOverlay: Boolean = true,
+    posterOverlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val posterCardStyle = rememberPosterCardStyleUiState()
     val isLandscapeMode = useLandscapeBackdropMode || posterCardStyle.catalogLandscapeModeEnabled
@@ -53,6 +55,7 @@ fun HomePosterCard(
             isWatched = isWatched,
             onClick = onClick,
             onLongClick = onLongClick,
+            posterOverlay = posterOverlay,
         )
     }
 }

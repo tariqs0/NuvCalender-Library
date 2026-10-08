@@ -1,5 +1,9 @@
 package com.nuvio.app
 
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.library.LibraryHiddenRepository
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.MutableTransitionState
@@ -374,6 +378,80 @@ internal fun MainAppContent(
     val newCollectionTitle = stringResource(Res.string.collections_new)
     val detailsFallbackTitle = stringResource(Res.string.meta_section_details_title)
     val isRemoteLibrarySource = libraryUiState.sourceMode != LibrarySourceMode.LOCAL
+    /** Removes a Library title (from one list, or every list when [listKey] is null). */
+    val removeLibraryItem: (LibraryItem, String?, Boolean) -> Unit = { libraryItem, listKey, removesFromLibrary ->
+        val animationKey = listKey
+            ?.let { listKey -> librarySectionItemKey(listKey, libraryItem) }
+        if (isRemoteLibrarySource) {
+            coroutineScope.launch {
+                val removeMembership: suspend (Set<TrackingProviderId>) ->
+                    TrackingMembershipApplyResult = { confirmedProviders ->
+                    if (listKey.isNullOrBlank()) {
+                        val currentMembership = LibraryRepository.getMembershipSnapshot(libraryItem)
+                        LibraryRepository.applyMembershipChanges(
+                            item = libraryItem,
+                            desiredMembership = currentMembership.mapValues { false },
+                            confirmedRemovalProviders = confirmedProviders,
+                        )
+                    } else {
+                        LibraryRepository.removeFromList(
+                            item = libraryItem,
+                            listKey = listKey,
+                            confirmedRemovalProviders = confirmedProviders,
+                        )
+                    }
+                }
+                val removeMembershipWithAnimation:
+                    suspend (Set<TrackingProviderId>) -> TrackingMembershipApplyResult =
+                    { confirmedProviders ->
+                        val request = if (removesFromLibrary) {
+                            animationKey?.let(libraryDisintegrationRequests::arm)
+                        } else {
+                            null
+                        }
+                        try {
+                            removeMembership(confirmedProviders).also { result ->
+                                if (result.requiresRemovalConfirmation && request != null) {
+                                    libraryDisintegrationRequests.cancel(request)
+                                }
+                            }
+                        } catch (error: Throwable) {
+                            request?.let(libraryDisintegrationRequests::cancel)
+                            throw error
+                        }
+                    }
+                executeTrackingMembershipOperation(
+                    operation = { removeMembershipWithAnimation(emptySet()) },
+                    onSuccess = { result ->
+                        if (result.requiresRemovalConfirmation) {
+                            pendingTrackingRemoval = PendingTrackingMembershipRemoval(
+                                itemTitle = libraryItem.name,
+                                confirmations = result.requiredRemovalConfirmations,
+                                retry = removeMembershipWithAnimation,
+                                onApplied = {},
+                                onFailure = { error ->
+                                    NuvioToastController.show(
+                                        error.message
+                                            ?: trackingListsUpdateFailedMessage,
+                                    )
+                                },
+                            )
+                        }
+                    },
+                    onFailure = { error ->
+                        NuvioToastController.show(
+                            error.message ?: trackingListsUpdateFailedMessage,
+                        )
+                    },
+                )
+            }
+        } else {
+            if (removesFromLibrary) {
+                animationKey?.let(libraryDisintegrationRequests::arm)
+            }
+            LibraryRepository.remove(libraryItem.id)
+        }
+    }
     val appContentGeneration = if (ownsAppRuntime && appGateController != null) {
         val generation by appGateController.contentGeneration.collectAsStateWithLifecycle()
         generation
@@ -1470,6 +1548,7 @@ internal fun MainAppContent(
                                 },
                                 onInitialHomeContentRendered = { initialHomeReady = true },
                                 onOpenCalendar = { activateTab(AppScreenTab.Calendar) },
+                                onLibraryRemove = { item, section -> removeLibraryItem(item, section?.type, true) },
                             )
                         },
                         onBack = {
@@ -1713,6 +1792,13 @@ internal fun MainAppContent(
             selectedPosterActionTarget?.let { posterActionTarget ->
                 key(posterActionTarget) {
                     val preview = posterActionTarget.preview
+                    val hiddenLibrary by remember {
+                        LibraryHiddenRepository.ensureLoaded()
+                        LibraryHiddenRepository.uiState
+                    }.collectAsStateWithLifecycle()
+                    val isHidden = hiddenLibrary.isHidden(preview.type, preview.id)
+                    val moveToHiddenLabel = stringResource(Res.string.library_action_move_to_hidden)
+                    val removeFromHiddenLabel = stringResource(Res.string.library_action_remove_from_hidden)
                     val isSaved = LibraryRepository.isSaved(preview.id, preview.type)
                     val isWatched = WatchingState.isPosterWatched(
                         watchedKeys = watchedUiState.watchedKeys,
@@ -1732,7 +1818,7 @@ internal fun MainAppContent(
                             },
                         isWatched = isWatched,
                         anchor = selectedPosterAnchor,
-                        actions = listOf(
+                        actions = listOfNotNull(
                             PosterZoomOverlayAction(
                                 icon = if (isSaved) Icons.Default.DeleteOutline else Icons.Default.Add,
                                 label = if (isSaved) {
@@ -1750,78 +1836,7 @@ internal fun MainAppContent(
                                     val libraryItem = posterActionTarget.libraryItem
                                         ?: preview.toLibraryItem(savedAtEpochMs = 0L)
                                     if (posterActionTarget.libraryItem != null) {
-                                        val animationKey = posterActionTarget.libraryListKey
-                                            ?.let { listKey -> librarySectionItemKey(listKey, libraryItem) }
-                                        if (isRemoteLibrarySource) {
-                                            coroutineScope.launch {
-                                                val listKey = posterActionTarget.libraryListKey
-                                                val removeMembership: suspend (Set<TrackingProviderId>) ->
-                                                    TrackingMembershipApplyResult = { confirmedProviders ->
-                                                    if (listKey.isNullOrBlank()) {
-                                                        val currentMembership = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                                        LibraryRepository.applyMembershipChanges(
-                                                            item = libraryItem,
-                                                            desiredMembership = currentMembership.mapValues { false },
-                                                            confirmedRemovalProviders = confirmedProviders,
-                                                        )
-                                                    } else {
-                                                        LibraryRepository.removeFromList(
-                                                            item = libraryItem,
-                                                            listKey = listKey,
-                                                            confirmedRemovalProviders = confirmedProviders,
-                                                        )
-                                                    }
-                                                }
-                                                val removeMembershipWithAnimation:
-                                                    suspend (Set<TrackingProviderId>) -> TrackingMembershipApplyResult =
-                                                    { confirmedProviders ->
-                                                        val request = if (removesFromLibrary) {
-                                                            animationKey?.let(libraryDisintegrationRequests::arm)
-                                                        } else {
-                                                            null
-                                                        }
-                                                        try {
-                                                            removeMembership(confirmedProviders).also { result ->
-                                                                if (result.requiresRemovalConfirmation && request != null) {
-                                                                    libraryDisintegrationRequests.cancel(request)
-                                                                }
-                                                            }
-                                                        } catch (error: Throwable) {
-                                                            request?.let(libraryDisintegrationRequests::cancel)
-                                                            throw error
-                                                        }
-                                                    }
-                                                executeTrackingMembershipOperation(
-                                                    operation = { removeMembershipWithAnimation(emptySet()) },
-                                                    onSuccess = { result ->
-                                                        if (result.requiresRemovalConfirmation) {
-                                                            pendingTrackingRemoval = PendingTrackingMembershipRemoval(
-                                                                itemTitle = libraryItem.name,
-                                                                confirmations = result.requiredRemovalConfirmations,
-                                                                retry = removeMembershipWithAnimation,
-                                                                onApplied = {},
-                                                                onFailure = { error ->
-                                                                    NuvioToastController.show(
-                                                                        error.message
-                                                                            ?: trackingListsUpdateFailedMessage,
-                                                                    )
-                                                                },
-                                                            )
-                                                        }
-                                                    },
-                                                    onFailure = { error ->
-                                                        NuvioToastController.show(
-                                                            error.message ?: trackingListsUpdateFailedMessage,
-                                                        )
-                                                    },
-                                                )
-                                            }
-                                        } else {
-                                            if (removesFromLibrary) {
-                                                animationKey?.let(libraryDisintegrationRequests::arm)
-                                            }
-                                            LibraryRepository.remove(libraryItem.id)
-                                        }
+                                        removeLibraryItem(libraryItem, posterActionTarget.libraryListKey, removesFromLibrary)
                                     } else {
                                         if (!isRemoteLibrarySource) {
                                             LibraryRepository.toggleLocalSaved(libraryItem)
@@ -1863,6 +1878,22 @@ internal fun MainAppContent(
                                     }
                                 },
                             ),
+                            // Any title (movie, series or other addon type) can go to the Hidden list once it is set up.
+                            if (hiddenLibrary.pinEnabled) {
+                                PosterZoomOverlayAction(
+                                    icon = if (isHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    label = if (isHidden) removeFromHiddenLabel else moveToHiddenLabel,
+                                    onSelected = {
+                                        if (isHidden) {
+                                            LibraryHiddenRepository.unhide(preview.type, preview.id)
+                                        } else {
+                                            LibraryHiddenRepository.hide(preview, nowEpochMs = LibraryClock.nowEpochMs())
+                                        }
+                                    },
+                                )
+                            } else {
+                                null
+                            },
                         ),
                         hazeState = posterOverlayHazeState,
                         onDismissed = {

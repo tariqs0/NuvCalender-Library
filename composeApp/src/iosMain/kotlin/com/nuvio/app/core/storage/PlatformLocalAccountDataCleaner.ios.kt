@@ -14,7 +14,7 @@ internal actual object PlatformLocalAccountDataCleaner {
         "anonymous_user_id",
         "member_access_payload",
     )
-    private val profilePinCachePrefixes = listOf("profile_pin_cache_")
+    private val profilePinCachePrefixes = listOf("profile_pin_cache_", "library_hidden_")
     private val profileIndexedPrefixes = listOf(
         "installed_manifest_urls_",
         "plugins_state_",

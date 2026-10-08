@@ -1,5 +1,7 @@
 package com.nuvio.app.features.calendar
 
+import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.library.LibraryHiddenRepository
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.httpGetText
@@ -283,13 +285,46 @@ internal object CalendarRepository {
     // ── Personal ──────────────────────────────────────────────────────────────────────────────
     private val personalMutex = Mutex()
     private val personalByTitle = mutableMapOf<String, List<CalendarEntry>>()
+    private val personalInfoByTitle = mutableMapOf<String, LibraryTitleInfo>()
     private val _personalState = MutableStateFlow(CalendarFeedState())
-    val personalState: StateFlow<CalendarFeedState> = _personalState.asStateFlow()
-    private var personalJob: Job? = null
+    private val _libraryTitleInfo = MutableStateFlow<Map<String, LibraryTitleInfo>>(emptyMap())
 
-    /** Starts following the library; titles are expanded once and re-used until refreshed. */
+    /** The Library calendar; titles in the Hidden list never appear here. */
+    val personalState: StateFlow<CalendarFeedState> =
+        combine(_personalState, LibraryHiddenRepository.uiState) { feed, hidden ->
+            if (hidden.hiddenKeys.isEmpty()) {
+                feed
+            } else {
+                feed.copy(
+                    entriesByDay = feed.entriesByDay
+                        .mapValues { (_, entries) -> entries.filterNot { hidden.isHidden(it.preview.type, it.preview.id) } }
+                        .filterValues { it.isNotEmpty() },
+                )
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, CalendarFeedState())
+
+    /**
+     * Metadata the Library page filters and sorts on (genres, country, language, streaming
+     * services, popularity, rating) plus every dated episode / release, keyed by "type:id".
+     */
+    val libraryTitleInfo: StateFlow<Map<String, LibraryTitleInfo>> = _libraryTitleInfo.asStateFlow()
+    private var personalJob: Job? = null
+    private var personalRefreshedAtMs: Long? = null
+
+    /**
+     * Starts following the library; titles are expanded once and re-used until refreshed.
+     * Once the expansion is older than [LIBRARY_RELEASES_MAX_AGE_MS] it is re-read from the
+     * addons, so newly announced episodes and seasons appear while the app stays open.
+     */
     fun ensurePersonalLoaded() {
-        if (personalJob?.isActive == true) return
+        if (personalJob?.isActive == true) {
+            val now = LibraryClock.nowEpochMs()
+            if (isLibraryRefreshDue(personalRefreshedAtMs, now)) {
+                personalRefreshedAtMs = now
+                refreshPersonal()
+            }
+            return
+        }
         LibraryRepository.ensureLoaded()
         personalJob = scope.launch {
             LibraryRepository.uiState
@@ -311,9 +346,11 @@ internal object CalendarRepository {
     private suspend fun syncPersonal(items: List<LibraryItem>, force: Boolean) {
         val wanted = items.associateBy(::titleKey)
         val missing = personalMutex.withLock {
-            if (force) personalByTitle.clear()
             personalByTitle.keys.retainAll(wanted.keys)
-            wanted.filterKeys { it !in personalByTitle }.values.toList()
+            personalInfoByTitle.keys.retainAll(wanted.keys)
+            if (personalByTitle.isEmpty() || force) personalRefreshedAtMs = LibraryClock.nowEpochMs()
+            // A refresh re-reads every title but keeps the current data on screen until replaced.
+            if (force) wanted.values.toList() else wanted.filterKeys { it !in personalByTitle }.values.toList()
         }
         publishPersonal(isLoading = missing.isNotEmpty())
         if (missing.isEmpty()) return
@@ -325,10 +362,13 @@ internal object CalendarRepository {
         missing.map { item ->
             scope.async {
                 semaphore.withPermit {
-                    val entries = runCatching { buildPersonalEntries(item) }
+                    val built = runCatching { buildPersonalEntries(item, fresh = force) }
                         .onFailure { log.w { "Calendar expansion failed for ${item.type}:${item.id}: ${it.message}" } }
-                        .getOrDefault(emptyList())
-                    personalMutex.withLock { personalByTitle[titleKey(item)] = entries }
+                        .getOrNull()
+                    personalMutex.withLock {
+                        personalByTitle[titleKey(item)] = built?.first.orEmpty()
+                        built?.second?.let { personalInfoByTitle[titleKey(item)] = it }
+                    }
                     publishPersonal(isLoading = true)
                 }
             }
@@ -337,7 +377,8 @@ internal object CalendarRepository {
     }
 
     private suspend fun publishPersonal(isLoading: Boolean) {
-        val entries = personalMutex.withLock { personalByTitle.values.flatten() }
+        val (entries, infos) = personalMutex.withLock { personalByTitle.values.flatten() to personalInfoByTitle.toMap() }
+        _libraryTitleInfo.value = infos
         _personalState.value = CalendarFeedState(
             entriesByDay = entries.groupBy { it.day.epochDay },
             isLoading = isLoading,
@@ -345,8 +386,11 @@ internal object CalendarRepository {
         )
     }
 
-    private suspend fun buildPersonalEntries(item: LibraryItem): List<CalendarEntry> {
-        val meta = MetaDetailsRepository.fetch(type = item.type, id = item.id, cacheResult = false)
+    private suspend fun buildPersonalEntries(
+        item: LibraryItem,
+        fresh: Boolean,
+    ): Pair<List<CalendarEntry>, LibraryTitleInfo> {
+        val meta = MetaDetailsRepository.fetch(type = item.type, id = item.id, cacheResult = false, readCache = !fresh)
         val preview = item.toMetaPreview().let { base ->
             if (meta == null) base else base.copy(
                 banner = base.banner ?: meta.background,
@@ -356,28 +400,43 @@ internal object CalendarRepository {
                 imdbRating = base.imdbRating ?: meta.imdbRating,
             )
         }
+        val tmdb = libraryTmdbInfo(item, meta)
         val facets = CalendarFacets.of(
             genreNames = preview.genres + listOfNotNull("Anime".takeIf { item.isAnime }),
             language = meta?.language,
             countries = meta?.country?.split(',').orEmpty(),
-        ).copy(services = libraryServices(item, meta))
-        return if (item.type.isMovieType()) {
+        ).copy(services = tmdb.services)
+        val entries = if (item.type.isMovieType()) {
             movieEntries(item, meta, preview, facets)
         } else {
             seriesEntries(meta, preview, facets)
         }
+        val info = LibraryTitleInfo(
+            facets = facets,
+            popularity = tmdb.popularity,
+            rating = tmdb.rating ?: (preview.imdbRating ?: meta?.imdbRating)?.toDoubleOrNull(),
+            startYear = leadingYear(item.releaseInfo ?: meta?.releaseInfo),
+            episodes = meta?.videos.orEmpty().mapNotNull { video ->
+                val season = video.season ?: return@mapNotNull null
+                val episode = video.episode ?: return@mapNotNull null
+                LibraryEpisodeRef(season, episode, CalendarDay.parse(video.released)?.epochDay)
+            },
+            releaseDays = entries.map { it.day.epochDay }.distinct().sorted(),
+        )
+        return entries to info
     }
 
-    /** Streaming services for a Library title, so its calendar offers the same service filter as Global. */
-    private suspend fun libraryServices(item: LibraryItem, meta: MetaDetails?): Set<CalendarStreamingService> {
-        val apiKey = TmdbSettingsRepository.effectiveApiKey().takeIf(String::isNotBlank) ?: return emptySet()
+    /** Streaming services, popularity and rating for a Library title, so it filters like Global. */
+    private suspend fun libraryTmdbInfo(item: LibraryItem, meta: MetaDetails?): TmdbCalendarSource.TmdbTitleInfo {
+        val apiKey = TmdbSettingsRepository.effectiveApiKey().takeIf(String::isNotBlank)
+            ?: return TmdbCalendarSource.TmdbTitleInfo()
         val isMovie = item.type.isMovieType()
         val tmdbId = item.tmdbId
             ?: runCatching {
                 TmdbService.ensureTmdbId(item.id, if (isMovie) "movie" else "tv", item.imdbId ?: meta?.imdbId)
             }.getOrNull()?.toIntOrNull()
-            ?: return emptySet()
-        return TmdbCalendarSource.servicesForTitle(apiKey, tmdbId, isMovie, viewerRegion())
+            ?: return TmdbCalendarSource.TmdbTitleInfo()
+        return TmdbCalendarSource.titleInfo(apiKey, tmdbId, isMovie, viewerRegion())
     }
 
     /** Tracking providers tag anime via [LibraryItem.mediaCategory]; anime addons via their id scheme. */

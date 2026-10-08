@@ -32,7 +32,7 @@ enum class CalendarSort {
 }
 
 /** Genre / language / country narrowing for the busy Global calendar; empty sets match all. */
-internal data class CalendarRefinement(
+data class CalendarRefinement(
     val genres: Set<String> = emptySet(),
     val languages: Set<String> = emptySet(),
     val countries: Set<String> = emptySet(),
@@ -41,7 +41,7 @@ internal data class CalendarRefinement(
 ) {
     val activeCount: Int get() = genres.size + languages.size + countries.size + services.size
 
-    fun matches(facets: CalendarFacets): Boolean =
+    internal fun matches(facets: CalendarFacets): Boolean =
         (genres.isEmpty() || facets.genres.any(genres::contains)) &&
             (languages.isEmpty() || facets.language in languages) &&
             (countries.isEmpty() || facets.countries.any(countries::contains)) &&

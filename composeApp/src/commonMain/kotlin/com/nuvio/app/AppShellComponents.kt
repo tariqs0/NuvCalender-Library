@@ -195,6 +195,8 @@ internal data class AppTabActions(
     val onRequestedSettingsPageConsumed: () -> Unit = {},
     val onInitialHomeContentRendered: () -> Unit = {},
     val onOpenCalendar: (() -> Unit)? = null,
+    /** The Library poster "×": removes from one list, or every list when the list is null. */
+    val onLibraryRemove: ((LibraryItem, LibrarySection?) -> Unit)? = null,
 )
 
 @Composable
@@ -282,6 +284,8 @@ internal fun AppTabHost(
                     onConnectCloudClick = actions.onConnectCloudClick,
                     onDownloadsClick = actions.onDownloadsClick,
                     disintegrationRequest = state.libraryDisintegrationRequest,
+                    onRemove = actions.onLibraryRemove,
+                    onHiddenPosterLongClick = actions.onPosterLongClick,
                 )
             }
 
