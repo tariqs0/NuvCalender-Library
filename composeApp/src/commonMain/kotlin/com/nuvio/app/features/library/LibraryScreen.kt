@@ -604,7 +604,7 @@ fun LibraryScreen(
                                 item(key = "library-list-empty") {
                                     LibraryListEmptyState(
                                         list = selectedSmartList,
-                                        filtered = verticalProjection.selectedType != null ||
+                                        filtered = selectedLibraryType != null ||
                                             displaySettings.refinement.activeCount > 0,
                                         modifier = Modifier.padding(horizontal = 16.dp),
                                     )
