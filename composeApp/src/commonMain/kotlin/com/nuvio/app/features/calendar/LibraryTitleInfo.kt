@@ -1,5 +1,7 @@
 package com.nuvio.app.features.calendar
 
+import com.nuvio.app.features.details.MetaDetails
+
 /** One episode of a Library series and the day it airs (null when not dated yet). */
 internal data class LibraryEpisodeRef(
     val season: Int,
@@ -38,3 +40,14 @@ internal fun isLibraryRefreshDue(
     nowEpochMs: Long,
     maxAgeMs: Long = LIBRARY_RELEASES_MAX_AGE_MS,
 ): Boolean = lastRefreshEpochMs != null && nowEpochMs - lastRefreshEpochMs >= maxAgeMs
+
+/**
+ * Every numbered episode an addon lists for a title, with its air day when the addon gives one.
+ * This is what moves a caught-up series back to Continue Watching once a new episode airs.
+ */
+internal fun libraryEpisodesOf(meta: MetaDetails?): List<LibraryEpisodeRef> =
+    meta?.videos.orEmpty().mapNotNull { video ->
+        val season = video.season ?: return@mapNotNull null
+        val episode = video.episode ?: return@mapNotNull null
+        LibraryEpisodeRef(season, episode, CalendarDay.parse(video.released)?.epochDay)
+    }

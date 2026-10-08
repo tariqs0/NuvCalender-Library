@@ -247,7 +247,8 @@ internal object MetaDetailsParser {
                 thumbnail = video.string("thumbnail"),
                 seasonPoster = video.string("seasonPoster") ?: video.string("season_poster_path"),
                 season = video.int("season"),
-                episode = video.int("episode"),
+                // Older addons send the episode number as "number" (the earlier Stremio field name).
+                episode = video.int("episode") ?: video.int("number"),
                 overview = video.string("overview") ?: video.string("description"),
                 runtime = parseRuntimeMinutes((video["runtime"] as? JsonPrimitive)?.contentOrNull),
                 rating = video.string("rating")?.trim()?.toDoubleOrNull()?.takeIf { it > 0.0 },
