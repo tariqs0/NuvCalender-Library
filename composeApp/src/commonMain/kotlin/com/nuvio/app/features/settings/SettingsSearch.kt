@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Tune
@@ -241,6 +242,69 @@ internal fun settingsSearchEntries(
         pageLabel = contentDiscoveryPage,
         section = stringResource(Res.string.settings_content_discovery_section_search),
         icon = Icons.Rounded.Search,
+    )
+    addRow(
+        page = SettingsPage.ContentDiscovery,
+        key = "global-release-calendar",
+        title = stringResource(Res.string.settings_calendar_global),
+        description = stringResource(Res.string.settings_calendar_global_description),
+        pageLabel = contentDiscoveryPage,
+        section = stringResource(Res.string.settings_calendar_section),
+        icon = Icons.Rounded.CalendarMonth,
+    )
+    addRow(
+        page = SettingsPage.ContentDiscovery,
+        key = "calendar-home-row",
+        title = stringResource(Res.string.settings_calendar_home_row),
+        description = stringResource(Res.string.settings_calendar_home_row_description),
+        pageLabel = contentDiscoveryPage,
+        section = stringResource(Res.string.settings_calendar_section),
+        icon = Icons.Rounded.CalendarMonth,
+    )
+    addRow(
+        page = SettingsPage.ContentDiscovery,
+        key = "calendar-navigation",
+        title = stringResource(Res.string.settings_calendar_show_in_navigation),
+        description = stringResource(Res.string.settings_calendar_show_in_navigation_description),
+        pageLabel = contentDiscoveryPage,
+        section = stringResource(Res.string.settings_calendar_section),
+        icon = Icons.Rounded.CalendarMonth,
+    )
+    addRow(
+        page = SettingsPage.ContentDiscovery,
+        key = "calendar-default-view",
+        title = stringResource(Res.string.settings_calendar_default_view),
+        description = stringResource(Res.string.settings_calendar_default_view_description),
+        pageLabel = contentDiscoveryPage,
+        section = stringResource(Res.string.settings_calendar_section),
+        icon = Icons.Rounded.CalendarMonth,
+    )
+    addRow(
+        page = SettingsPage.ContentDiscovery,
+        key = "calendar-month-display",
+        title = stringResource(Res.string.settings_calendar_month_display),
+        description = stringResource(Res.string.settings_calendar_month_display_description),
+        pageLabel = contentDiscoveryPage,
+        section = stringResource(Res.string.settings_calendar_section),
+        icon = Icons.Rounded.CalendarMonth,
+    )
+    addRow(
+        page = SettingsPage.ContentDiscovery,
+        key = "calendar-first-day",
+        title = stringResource(Res.string.settings_calendar_first_day),
+        description = stringResource(Res.string.settings_calendar_first_day_description),
+        pageLabel = contentDiscoveryPage,
+        section = stringResource(Res.string.settings_calendar_section),
+        icon = Icons.Rounded.CalendarMonth,
+    )
+    addRow(
+        page = SettingsPage.ContentDiscovery,
+        key = "calendar-density",
+        title = stringResource(Res.string.settings_calendar_density),
+        description = stringResource(Res.string.settings_calendar_density_description),
+        pageLabel = contentDiscoveryPage,
+        section = stringResource(Res.string.settings_calendar_section),
+        icon = Icons.Rounded.CalendarMonth,
     )
     addPage(
         page = SettingsPage.Playback,

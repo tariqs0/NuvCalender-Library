@@ -1,5 +1,7 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.features.calendar.CalendarSettingsRepository
+import com.nuvio.app.features.calendar.HomeLibraryCalendarRow
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatePriority
@@ -129,7 +131,12 @@ fun HomeScreen(
     continueWatchingDisintegrationRequest: DisintegrationRequest<String>? = null,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
     onFirstCatalogRendered: (() -> Unit)? = null,
+    onOpenCalendar: (() -> Unit)? = null,
 ) {
+    val calendarSettings by remember {
+        CalendarSettingsRepository.ensureLoaded()
+        CalendarSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) {
             AddonRepository.initialize()
@@ -1162,6 +1169,18 @@ fun HomeScreen(
                         disintegrationRequest = continueWatchingDisintegrationRequest,
                     )
 
+                    if (calendarSettings.showLibraryRowOnHome) {
+                        item(key = HOME_LIBRARY_CALENDAR_SECTION_KEY, contentType = "library_calendar") {
+                            HomeLibraryCalendarRow(
+                                sectionPadding = homeSectionPadding,
+                                onOpenCalendar = onOpenCalendar,
+                                onPosterClick = onPosterClick,
+                                onPosterLongClick = onPosterLongClick,
+                                modifier = Modifier.padding(bottom = 12.dp),
+                            )
+                        }
+                    }
+
                     keyedEnabledHomeItems.forEach { keyedSettingsItem ->
                         val settingsItem = keyedSettingsItem.value
                         if (settingsItem.isCollection) {
@@ -1270,6 +1289,7 @@ private fun LazyListScope.homeContinueWatchingSections(
 private const val HOME_CATALOG_PREVIEW_LIMIT = 18
 private const val HOME_CONTINUE_WATCHING_SECTION_KEY = "home_continue_watching"
 private const val HOME_UPCOMING_SECTION_KEY = "home_upcoming"
+private const val HOME_LIBRARY_CALENDAR_SECTION_KEY = "home_library_calendar"
 internal const val HomeContinueWatchingMaxRecentProgressItems = 300
 internal const val HomeNextUpInitialResolutionLimit = 32
 private const val NEXT_UP_RESOLUTION_CONCURRENCY = 4

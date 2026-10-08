@@ -420,6 +420,7 @@ internal fun MainAppContent(
                 searchScrollToTopRequests.tryEmit(Unit)
             }
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.Calendar -> Unit
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
     }
@@ -1468,6 +1469,7 @@ internal fun MainAppContent(
                                     requestedSettingsPageName = null
                                 },
                                 onInitialHomeContentRendered = { initialHomeReady = true },
+                                onOpenCalendar = { activateTab(AppScreenTab.Calendar) },
                             )
                         },
                         onBack = {
