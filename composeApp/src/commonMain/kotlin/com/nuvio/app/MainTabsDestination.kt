@@ -1,5 +1,6 @@
 package com.nuvio.app
 
+import com.nuvio.app.features.calendar.rememberCalendarInNavigation
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -54,6 +56,7 @@ import com.nuvio.app.features.settings.ThemeSettingsRepository
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.compose_nav_calendar
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
@@ -141,7 +144,8 @@ internal fun MainTabsDestination(
         }
         val navBarGlowEnabled by ThemeSettingsRepository.navBarGlowEnabled.collectAsStateWithLifecycle()
         var isTopProfileSwitcherOpen by remember { mutableStateOf(false) }
-        val floatingNavigationItems = listOf(
+        val showCalendarInNavigation = rememberCalendarInNavigation()
+        val floatingNavigationItems = listOfNotNull(
             FloatingNavigationItem(
                 selected = selectedTab == AppScreenTab.Home,
                 onClick = { onTabSelected(AppScreenTab.Home) },
@@ -160,6 +164,12 @@ internal fun MainTabsDestination(
                 drawable = Res.drawable.sidebar_library,
                 label = stringResource(Res.string.compose_nav_library),
             ),
+            FloatingNavigationItem(
+                selected = selectedTab == AppScreenTab.Calendar,
+                onClick = { onTabSelected(AppScreenTab.Calendar) },
+                icon = Icons.Rounded.CalendarMonth,
+                label = stringResource(Res.string.compose_nav_calendar),
+            ).takeIf { showCalendarInNavigation },
             FloatingNavigationItem(
                 selected = selectedTab == AppScreenTab.Settings,
                 onClick = { onTabSelected(AppScreenTab.Settings) },
@@ -206,6 +216,14 @@ internal fun MainTabsDestination(
                             icon = Res.drawable.sidebar_library,
                             contentDescription = stringResource(Res.string.compose_nav_library),
                         )
+                        if (showCalendarInNavigation) {
+                            NavItem(
+                                selected = selectedTab == AppScreenTab.Calendar,
+                                onClick = { onTabSelected(AppScreenTab.Calendar) },
+                                icon = Icons.Rounded.CalendarMonth,
+                                contentDescription = stringResource(Res.string.compose_nav_calendar),
+                            )
+                        }
                         NavItem(
                             selected = selectedTab == AppScreenTab.Settings,
                             onClick = { onTabSelected(AppScreenTab.Settings) },

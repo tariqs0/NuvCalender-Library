@@ -176,6 +176,7 @@ object ProfileRepository {
         TrackingProviderRegistry.onProfileChanged()
         LibraryRepository.onProfileChanged(profileIndex)
         LibraryDisplaySettingsRepository.onProfileChanged()
+        com.nuvio.app.features.calendar.CalendarSettingsRepository.onProfileChanged()
         WatchProgressRepository.onProfileChanged(profileIndex)
         AddonRepository.onProfileChanged(profileIndex)
         if (com.nuvio.app.core.build.AppFeaturePolicy.pluginsEnabled) {

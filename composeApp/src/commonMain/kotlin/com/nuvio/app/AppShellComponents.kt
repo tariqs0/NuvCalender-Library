@@ -1,5 +1,6 @@
 package com.nuvio.app
 
+import com.nuvio.app.features.calendar.rememberCalendarInNavigation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -35,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +76,7 @@ import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.HomeScreen
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.library.LibraryItem
+import com.nuvio.app.features.calendar.CalendarScreen
 import com.nuvio.app.features.library.LibraryScreen
 import com.nuvio.app.features.library.LibrarySection
 import com.nuvio.app.features.library.LibrarySortOption
@@ -102,6 +105,7 @@ import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.flow.Flow
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.app_brand_name
+import nuvio.composeapp.generated.resources.compose_nav_calendar
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_profile
@@ -190,6 +194,7 @@ internal data class AppTabActions(
     val onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
     val onRequestedSettingsPageConsumed: () -> Unit = {},
     val onInitialHomeContentRendered: () -> Unit = {},
+    val onOpenCalendar: (() -> Unit)? = null,
 )
 
 @Composable
@@ -248,6 +253,7 @@ internal fun AppTabHost(
                         continueWatchingDisintegrationRequest = state.continueWatchingDisintegrationRequest,
                         onFolderClick = actions.onFolderClick,
                         onFirstCatalogRendered = actions.onInitialHomeContentRendered,
+                        onOpenCalendar = actions.onOpenCalendar,
                     )
                 }
             }
@@ -276,6 +282,14 @@ internal fun AppTabHost(
                     onConnectCloudClick = actions.onConnectCloudClick,
                     onDownloadsClick = actions.onDownloadsClick,
                     disintegrationRequest = state.libraryDisintegrationRequest,
+                )
+            }
+
+            AppScreenTab.Calendar -> {
+                CalendarScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    topChromePadding = state.topChromePadding,
+                    onOpenDetails = actions.onPosterClick,
                 )
             }
 
@@ -322,6 +336,7 @@ internal fun TabletFloatingTopBar(
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
+    val showCalendarInNavigation = rememberCalendarInNavigation()
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -570,6 +585,30 @@ internal fun TabletFloatingTopBar(
                             )
                         },
                     )
+                    if (showCalendarInNavigation) {
+                        TabletTopPillItem(
+                            label = stringResource(Res.string.compose_nav_calendar),
+                            selected = selectedTab == AppScreenTab.Calendar,
+                            onClick = { onTabSelected(AppScreenTab.Calendar) },
+                            labelFraction = labelFraction,
+                            pillHeight = pillHeight,
+                            expandedHorizontalPadding = expandedHorizontalPadding,
+                            collapsedHorizontalPadding = iconCollapsedPadding,
+                            textStyle = labelTextStyle,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.CalendarMonth,
+                                    contentDescription = stringResource(Res.string.compose_nav_calendar),
+                                    modifier = Modifier.size(navIconSize),
+                                    tint = if (selectedTab == AppScreenTab.Calendar) {
+                                        tokens.colors.textPrimary
+                                    } else {
+                                        Color.White.copy(alpha = 0.70f)
+                                    },
+                                )
+                            },
+                        )
+                    }
                     TabletTopPillItem(
                         label = stringResource(Res.string.compose_nav_settings),
                         selected = selectedTab == AppScreenTab.Settings,
@@ -726,6 +765,7 @@ internal fun DesktopHoverSidebar(
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
+    val showCalendarInNavigation = rememberCalendarInNavigation()
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val profileState by ProfileRepository.state.collectAsStateWithLifecycle()
     val avatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
@@ -763,7 +803,7 @@ internal fun DesktopHoverSidebar(
             } else {
                 0.dp
             }
-            val navColumnHeight = DesktopSidebarItemHeight * AppScreenTab.entries.size
+            val navColumnHeight = DesktopSidebarItemHeight * (AppScreenTab.entries.size - if (showCalendarInNavigation) 0 else 1)
             val centeredNavTop = ((maxHeight - navColumnHeight) / 2).coerceAtLeast(0.dp)
             val availableNavOffset = (maxHeight - navColumnHeight - centeredNavTop).coerceAtLeast(0.dp)
             val navColumnOffset = (minNavTop - centeredNavTop)
@@ -854,6 +894,21 @@ internal fun DesktopHoverSidebar(
                         modifier = Modifier.size(DesktopSidebarIconSize),
                         tint = color,
                     )
+                }
+                if (showCalendarInNavigation) {
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.compose_nav_calendar),
+                        selected = selectedTab == AppScreenTab.Calendar,
+                        expanded = sidebarExpanded,
+                        onClick = { selectTab(AppScreenTab.Calendar) },
+                    ) { color ->
+                        Icon(
+                            imageVector = Icons.Rounded.CalendarMonth,
+                            contentDescription = stringResource(Res.string.compose_nav_calendar),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
                 }
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),
