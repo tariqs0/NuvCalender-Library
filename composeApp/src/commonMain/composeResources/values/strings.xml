@@ -2617,6 +2617,14 @@
     <string name="library_hidden_empty_title">Nothing hidden yet</string>
     <string name="library_hidden_empty_message">Long-press or right-click any title and choose Move to Hidden. Hidden titles disappear from your regular lists.</string>
     <string name="library_list_all">All</string>
+    <string name="library_list_empty_continue_title">Nothing in progress</string>
+    <string name="library_list_empty_continue_message">Titles you've started, and series with a new episode out, show up here.</string>
+    <string name="library_list_empty_watchlist_title">Your watchlist is empty</string>
+    <string name="library_list_empty_watchlist_message">Saved titles you haven't started yet show up here.</string>
+    <string name="library_list_empty_watched_title">Nothing watched yet</string>
+    <string name="library_list_empty_watched_message">Finished movies and series you're caught up on show up here.</string>
+    <string name="library_list_empty_filtered_title">No titles match</string>
+    <string name="library_list_empty_filtered_message">Try another type or clear the filters.</string>
     <string name="library_action_move_to_hidden">Move to Hidden</string>
     <string name="library_action_remove_from_hidden">Remove from Hidden</string>
     <string name="library_filters">Filters</string>

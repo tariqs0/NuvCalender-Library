@@ -93,6 +93,14 @@ import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import nuvio.composeapp.generated.resources.library_list_empty_continue_message
+import nuvio.composeapp.generated.resources.library_list_empty_continue_title
+import nuvio.composeapp.generated.resources.library_list_empty_filtered_message
+import nuvio.composeapp.generated.resources.library_list_empty_filtered_title
+import nuvio.composeapp.generated.resources.library_list_empty_watched_message
+import nuvio.composeapp.generated.resources.library_list_empty_watched_title
+import nuvio.composeapp.generated.resources.library_list_empty_watchlist_message
+import nuvio.composeapp.generated.resources.library_list_empty_watchlist_title
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
@@ -592,7 +600,16 @@ fun LibraryScreen(
                                     LibraryDisplaySettingsRepository.setLayoutMode(LibraryLayoutMode.VERTICAL)
                                 },
                             )
-                            LibraryLayoutMode.VERTICAL -> libraryVerticalContent(
+                            LibraryLayoutMode.VERTICAL -> if (verticalProjection.entries.isEmpty()) {
+                                item(key = "library-list-empty") {
+                                    LibraryListEmptyState(
+                                        list = selectedSmartList,
+                                        filtered = verticalProjection.selectedType != null ||
+                                            displaySettings.refinement.activeCount > 0,
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                    )
+                                }
+                            } else libraryVerticalContent(
                                 projection = verticalProjection,
                                 columns = gridColumns,
                                 watchedKeys = watchedUiState.watchedKeys,
@@ -1356,6 +1373,22 @@ internal enum class LibraryViewMode {
     Saved,
     Cloud,
     Hidden,
+}
+
+/** Shown instead of a blank page when the chosen list (or the current filters) has no titles. */
+@Composable
+private fun LibraryListEmptyState(list: LibrarySmartList?, filtered: Boolean, modifier: Modifier = Modifier) {
+    val (title, message) = when {
+        filtered -> Res.string.library_list_empty_filtered_title to Res.string.library_list_empty_filtered_message
+        list == LibrarySmartList.ContinueWatching ->
+            Res.string.library_list_empty_continue_title to Res.string.library_list_empty_continue_message
+        list == LibrarySmartList.Watchlist ->
+            Res.string.library_list_empty_watchlist_title to Res.string.library_list_empty_watchlist_message
+        list == LibrarySmartList.Watched ->
+            Res.string.library_list_empty_watched_title to Res.string.library_list_empty_watched_message
+        else -> Res.string.library_list_empty_filtered_title to Res.string.library_list_empty_filtered_message
+    }
+    HomeEmptyStateCard(modifier = modifier, title = stringResource(title), message = stringResource(message))
 }
 
 internal enum class HiddenDialog { Setup, Unlock, TurnOff }
